@@ -1,0 +1,173 @@
+# Canonical Update workflow — Nix Packaging Standard.
+# Source of truth: github:Daaboulex/nix-packaging-standard. Bootstrapped into
+# each packaging repo by sync.sh; byte-identity enforced by the std-conformance
+# flake check (flakeModules.base) — do not edit per-repo copies.
+name: Update
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22 (node24)
+
+      - name: Run update
+        id: update
+        run: |
+          set +e
+          bash scripts/update.sh 2>&1 | tee /tmp/update.log
+          EXIT_CODE=${PIPESTATUS[0]}  # update.sh's exit, NOT tee's (always 0)
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [ -f /tmp/update-outputs.env ]; then
+            cat /tmp/update-outputs.env >> "$GITHUB_OUTPUT"
+          fi
+
+      # Silent success: commit + push
+      - name: Push update
+        if: steps.update.outputs.updated == 'true' && steps.update.outputs.exit_code == '0'
+        # Outputs pass via env, never interpolated into the run-block shell
+        # (an upstream tag with a quote or $(...) would otherwise inject).
+        env:
+          OLDV: ${{ steps.update.outputs.old_version }}
+          NEWV: ${{ steps.update.outputs.new_version }}
+          PKG: ${{ steps.update.outputs.package_name }}
+          AUTO_ADDED: ${{ steps.update.outputs.auto_added }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A ':!AI-*.json'
+          git diff --cached --quiet && { echo "No changes to commit"; exit 0; }
+          if [ -n "${AUTO_ADDED}" ]; then
+            git commit -m "chore: update ${PKG} ${OLDV} -> ${NEWV}" \
+              -m "New upstream python requirement(s) added to the env: ${AUTO_ADDED}."
+          else
+            git commit -m "chore: update ${PKG} ${OLDV} -> ${NEWV}"
+          fi
+          git push
+
+      # Auto-close previous failure issues on success
+      - name: Close resolved issues
+        if: steps.update.outputs.updated == 'true' && steps.update.outputs.exit_code == '0'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9 (node24)
+        # Pass outputs via env, never interpolate ${{ }} into the script body
+        # (a value containing a quote/newline would break out of the JS).
+        env:
+          NEW_VERSION: ${{ steps.update.outputs.new_version }}
+        with:
+          script: |
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              labels: 'update-failed', state: 'open'
+            });
+            for (const issue of issues.data) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number, state: 'closed',
+                state_reason: 'completed'
+              });
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Resolved by auto-update to ${process.env.NEW_VERSION}.`
+              });
+            }
+
+      # Diagnostic issue on failure. Keyed on exit_code==1 alone (not on
+      # `updated`) so config/version-read failures — which never reach the
+      # point of setting `updated` — still surface. exit 2 = network, no issue.
+      - name: Create failure issue
+        if: steps.update.outputs.exit_code == '1'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9 (node24)
+        # Pass outputs via env, never interpolate ${{ }} into the script body
+        # (a value containing a quote/newline would break out of the JS).
+        env:
+          ERROR_TYPE: ${{ steps.update.outputs.error_type }}
+          OLD_VERSION: ${{ steps.update.outputs.old_version }}
+          NEW_VERSION: ${{ steps.update.outputs.new_version }}
+          UPSTREAM_URL: ${{ steps.update.outputs.upstream_url }}
+          PKG: ${{ steps.update.outputs.package_name }}
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.readFileSync('/tmp/update.log', 'utf8');
+            const lastLines = log.split('\n').slice(-100).join('\n');
+            const errorType = process.env.ERROR_TYPE || 'unknown';
+            const oldV = process.env.OLD_VERSION || '?';
+            const newV = process.env.NEW_VERSION || '?';
+            const upstream = process.env.UPSTREAM_URL || '';
+            const pkg = process.env.PKG || context.repo.repo;
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              labels: 'update-failed', state: 'open'
+            });
+            for (const issue of existing.data) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number, state: 'closed',
+                state_reason: 'not_planned'
+              });
+            }
+
+            // execFileSync passes args straight to git — no shell, so a
+            // pkg/version value with shell metacharacters cannot inject.
+            const { execFileSync } = require('child_process');
+            const git = (...args) => execFileSync('git', args, { stdio: 'inherit' });
+            const branch = `update/${pkg}-${newV}`;
+            let branchPushed = false;
+            // remirror-needed (trackOnly) makes no file changes — skip the
+            // empty update branch; the issue itself is the notification.
+            if (errorType !== 'remirror-needed') {
+              try {
+                git('config', 'user.name', 'github-actions[bot]');
+                git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com');
+                git('checkout', '-B', branch);
+                git('add', '-A', ':!AI-*.json');
+                git('commit', '-m', `wip: attempted update ${oldV} -> ${newV}`, '--allow-empty');
+                git('push', '-f', 'origin', branch);
+                branchPushed = true;
+              } catch (e) { /* best-effort */ }
+            }
+
+            const recoveryBlock = branchPushed ? [
+              '### Recovery',
+              '```bash',
+              `git fetch && git checkout update/${pkg}-${newV}`,
+              '# Fix the issue, then:',
+              'nix build --no-link && nix flake check --no-build',
+              `git checkout main && git merge update/${pkg}-${newV}`,
+              '```'
+            ] : [];
+
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title: `Update ${pkg} ${oldV} -> ${newV}: ${errorType}`,
+              labels: ['update-failed'],
+              body: [
+                `## Update Failed: ${pkg} ${oldV} -> ${newV}`,
+                '',
+                `**Failure**: \`${errorType}\``,
+                upstream ? `**Upstream**: ${upstream}` : '',
+                '',
+                '### Build log (last 100 lines)',
+                '<details><summary>Click to expand</summary>',
+                '',
+                '```',
+                lastLines,
+                '```',
+                '</details>',
+                '',
+                ...recoveryBlock,
+                '',
+                '---',
+                '*Created by [update workflow](.github/workflows/update.yml)*'
+              ].filter(Boolean).join('\n')
+            });

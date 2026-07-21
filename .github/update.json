@@ -1,0 +1,27 @@
+{
+  "package": "proton-cachyos",
+  "upstream": {
+    "type": "github-release",
+    "owner": "CachyOS",
+    "repo": "proton-cachyos",
+    "tagFilter": "^cachyos-"
+  },
+  "packageFile": "package.nix",
+  "hashes": ["hashX64", "hashV3", "hashArm64"],
+  "verify": {
+    "binary": null,
+    "check": "eval"
+  },
+  "description": "Proton-CachyOS packaged for NixOS - prebuilt Steam compatibility tool, every upstream variant",
+  "topics": [
+    "nix",
+    "nixos",
+    "flake",
+    "proton",
+    "proton-cachyos",
+    "cachyos",
+    "steam",
+    "gaming",
+    "wine"
+  ]
+}
