@@ -69,11 +69,18 @@
         };
 
       flake.overlays.default =
-        final: _prev:
-        removeAttrs (final.callPackage ./default.nix { }) [
-          "channels"
-          "override"
-          "overrideDerivation"
-        ];
+        final: prev:
+        let
+          assembled = final.callPackage ./default.nix { };
+          nameOf =
+            v: "proton-cachyos" + (if v == "x86_64" then "" else "-" + prev.lib.removePrefix "x86_64_" v);
+          variants = builtins.attrNames (import ./sources.nix).variants;
+        in
+        builtins.listToAttrs (
+          map (v: {
+            name = nameOf v;
+            value = assembled.${nameOf v};
+          }) variants
+        );
     };
 }
