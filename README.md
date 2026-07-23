@@ -38,6 +38,17 @@ A new upstream variant (a v2 or v4 build, say) joins as one more entry in the pa
 - **Upstream trust** - daily automated release detection, hash recomputation, and a verified test build, auto-committed to `main`
 - **Stale cleanup** - weekly `flake.lock` refresh (pushed only if it still builds); orphaned update branches older than 30 days are deleted
 
+## Channels
+
+Current version as of 2026-07-23; the live truth is `package.nix` (updated daily).
+
+| Attribute | CPU target | Version |
+|---|---|---|
+| `packages.default` (`pkgs.proton-cachyos`) | x86-64 | cachyos-11.0-20260702-slr |
+| `packages.x86_64_v3` (`pkgs.proton-cachyos-v3`) | x86-64-v3 | cachyos-11.0-20260702-slr |
+
+Upstream ships a single rolling 11.0 line; both CPU variants track it together.
+
 <!-- BEGIN generated:installation -->
 ## Installation
 
