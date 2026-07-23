@@ -70,6 +70,10 @@
 
       flake.overlays.default =
         final: _prev:
-        final.lib.filterAttrs (_: final.lib.isDerivation) (final.callPackage ./default.nix { });
+        removeAttrs (final.callPackage ./default.nix { }) [
+          "channels"
+          "override"
+          "overrideDerivation"
+        ];
     };
 }
