@@ -1,5 +1,5 @@
 {
-  description = "Proton-CachyOS packaged for NixOS - prebuilt Steam compatibility tool, every upstream variant";
+  description = "Proton-CachyOS packaged for NixOS - prebuilt Steam compatibility tool, rolling latest plus pinned channels";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -32,41 +32,44 @@
           lib,
           ...
         }:
+        let
+          assembled = pkgs.callPackage ./default.nix { };
+          isArm = pkgs.stdenv.hostPlatform.isAarch64;
+          native = if isArm then assembled.channels.arm64 else assembled.channels.x86_64;
+          variantPkgs = lib.filterAttrs (
+            _: drv: lib.isDerivation drv && lib.elem pkgs.stdenv.hostPlatform.system drv.meta.platforms
+          ) assembled;
+        in
         {
-          packages = {
-            default = pkgs.callPackage ./package.nix {
-              variant = if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "x86_64";
-            };
-          }
-          // lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
-            x86_64_v3 = pkgs.callPackage ./package.nix { variant = "x86_64_v3"; };
+          packages = variantPkgs // {
+            default = if isArm then assembled.proton-cachyos-arm64 else assembled.proton-cachyos;
           };
 
           checks.compat-tool-shape =
             let
-              tools = [
-                self'.packages.default.steamcompattool
-              ]
-              ++ lib.optional (self'.packages ? x86_64_v3) self'.packages.x86_64_v3.steamcompattool;
+              named = lib.mapAttrsToList (n: drv: {
+                inherit n;
+                tool = drv.steamcompattool;
+                ver = drv.version;
+              }) native;
             in
             pkgs.runCommand "proton-cachyos-shape" { } ''
-              for tool in ${lib.concatStringsSep " " (map toString tools)}; do
-                test -f "$tool/compatibilitytool.vdf"
-                test -e "$tool/proton"
-                grep -q '"proton-cachyos' "$tool/compatibilitytool.vdf"
-                if grep -qF "${self'.packages.default.version}" "$tool/compatibilitytool.vdf"; then
-                  echo "versioned identity leaked into the vdf" >&2
+              ${lib.concatMapStringsSep "\n" (c: ''
+                echo "checking channel ${c.n} (${c.ver})"
+                test -e "${c.tool}/proton"
+                test -f "${c.tool}/compatibilitytool.vdf"
+                grep -q '"Proton-CachyOS' "${c.tool}/compatibilitytool.vdf"
+                if grep -qF "${c.ver}" "${c.tool}/compatibilitytool.vdf"; then
+                  echo "versioned identity ${c.ver} leaked into channel ${c.n}'s vdf" >&2
                   exit 1
                 fi
-              done
+              '') named}
               touch "$out"
             '';
         };
 
-      flake.overlays.default = final: _prev: {
-        proton-cachyos = inputs.self.packages.${final.system}.default;
-        proton-cachyos-v3 =
-          inputs.self.packages.${final.system}.x86_64_v3 or (throw "proton-cachyos-v3 is x86_64-linux only");
-      };
+      flake.overlays.default =
+        final: _prev:
+        final.lib.filterAttrs (_: final.lib.isDerivation) (final.callPackage ./default.nix { });
     };
 }
