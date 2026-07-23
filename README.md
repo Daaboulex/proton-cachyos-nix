@@ -28,8 +28,8 @@ Every variant upstream publishes is packaged:
 | Attribute | Upstream asset | System |
 |---|---|---|
 | `proton-cachyos` (`packages.default`) | `x86_64` | `x86_64-linux` |
-| `proton-cachyos` (`packages.default`) | `arm64` | `aarch64-linux` |
-| `proton-cachyos-v3` (`packages.x86_64_v3`) | `x86_64_v3` (Zen 4/5-class CPU optimized) | `x86_64-linux` |
+| `proton-cachyos-arm64` (`packages.default`) | `arm64` | `aarch64-linux` |
+| `proton-cachyos-v3` (`packages.proton-cachyos-v3`) | `x86_64_v3` (Zen 4/5-class CPU optimized) | `x86_64-linux` |
 
 A new upstream variant (a future `x86_64_v4`, say) is discovered automatically: the daily updater enumerates the release's assets and regenerates the variant set from whatever CachyOS ships, so a new microarchitecture appears - and a dropped one disappears - with no code change.
 
@@ -88,7 +88,7 @@ programs.steam = {
 };
 ```
 
-Steam then lists Proton-CachyOS in each game's Compatibility dropdown. The `out` output is intentionally a stub - the tool is consumed through the `steamcompattool` output only, exactly like nixpkgs `proton-ge-bin`.
+Steam then lists `Proton-CachyOS-latest` (plus each pinned major, e.g. `Proton-CachyOS 10.0-sunset`) in each game's Compatibility dropdown. The `out` output is intentionally a stub - the tool is consumed through the `steamcompattool` output only, exactly like nixpkgs `proton-ge-bin`.
 
 ## License
 
