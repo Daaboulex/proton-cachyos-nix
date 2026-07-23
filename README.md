@@ -31,7 +31,7 @@ Every variant upstream publishes is packaged:
 | `proton-cachyos` (`packages.default`) | `arm64` | `aarch64-linux` |
 | `proton-cachyos-v3` (`packages.x86_64_v3`) | `x86_64_v3` (Zen 4/5-class CPU optimized) | `x86_64-linux` |
 
-A new upstream variant (a v2 or v4 build, say) joins as one more entry in the package's variant map; the daily update tracker keeps every packaged variant's hash converged with the newest `cachyos-*` release.
+A new upstream variant (a future `x86_64_v4`, say) is discovered automatically: the daily updater enumerates the release's assets and regenerates the variant set from whatever CachyOS ships, so a new microarchitecture appears - and a dropped one disappears - with no code change.
 
 - **Package integrity** - SRI source hash, verified on every build
 - **CI security** - pinned GitHub Actions (full SHA, not tags), minimal permissions, build-gated PRs
@@ -40,14 +40,18 @@ A new upstream variant (a v2 or v4 build, say) joins as one more entry in the pa
 
 ## Channels
 
-Current version as of 2026-07-23; the live truth is `package.nix` (updated daily).
+Current pins as of 2026-07-23; the live truth is `sources.nix` (updated daily).
 
-| Attribute | CPU target | Version |
+| Channel | Steam identity | Version |
 |---|---|---|
-| `packages.default` (`pkgs.proton-cachyos`) | x86-64 | cachyos-11.0-20260702-slr |
-| `packages.x86_64_v3` (`pkgs.proton-cachyos-v3`) | x86-64-v3 | cachyos-11.0-20260702-slr |
+| `latest` (`pkgs.proton-cachyos`) | `Proton-CachyOS-latest` | cachyos-11.0-20260702-slr |
+| `v11` | `Proton-CachyOS 11.0-20260702` | cachyos-11.0-20260702-slr |
+| `v10` | `Proton-CachyOS 10.0-sunset` | cachyos-10.0-sunset-slr |
 
-Upstream ships a single rolling 11.0 line; both CPU variants track it together.
+`latest` rolls with every upstream release; each `v<major>` is a frozen pin.
+Both CPU variants expose the same channel set - the `-v3` package
+(`pkgs.proton-cachyos-v3`) carries the same identities with a trailing `v3`
+(`Proton-CachyOS-latest v3`), so Steam lists the two side by side.
 
 <!-- BEGIN generated:installation -->
 ## Installation
