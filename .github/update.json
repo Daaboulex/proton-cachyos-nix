@@ -7,7 +7,11 @@
     "tagFilter": "^cachyos-"
   },
   "packageFile": "package.nix",
-  "hashes": ["hashX64", "hashV3", "hashArm64"],
+  "versionFile": "sources.nix",
+  "variantAssets": {
+    "sourceFile": "sources.nix",
+    "assetPrefix": "proton-"
+  },
   "verify": {
     "binary": null,
     "check": "eval"

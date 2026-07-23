@@ -393,6 +393,74 @@ else
   fi
 fi
 
+# --- Variant-asset discovery (multi-arch prebuilt release) --------------
+# A release that ships one prebuilt asset per CPU microarchitecture (e.g.
+# proton-cachyos <tag>-x86_64 / -x86_64_v3 / -arm64) cannot use the field-name
+# loop below: the assets share a fetchzip derivation name and only the default
+# variant is ever built here, so a mismatch cannot be routed to the right one.
+# Instead enumerate the release's assets, take each <variant> from
+# <assetPrefix><tag>-<variant><assetSuffix>, prefetch it unpacked (the exact
+# FOD hash fetchzip produces — proven equal to `nix hash path` of the unpacked
+# tree), and regenerate the marker-delimited rolling `variants` attrset in
+# sourceFile. A newly published variant (a future -x86_64_v4) is picked up with
+# no config change; a dropped one disappears. Pins sit outside the markers and
+# are never rewritten. Mutually exclusive with `hashes` (which stays empty).
+VARIANT_ASSETS=$(echo "$CONFIG" | jq -c '.variantAssets // empty')
+if [ -n "$VARIANT_ASSETS" ]; then
+  if [ "$UPSTREAM_TYPE" != "github-release" ]; then
+    err "variantAssets requires upstream.type 'github-release'"
+    output "error_type" "config-error"
+    exit 1
+  fi
+  VA_FILE=$(echo "$VARIANT_ASSETS" | jq -r '.sourceFile // "sources.nix"')
+  VA_PREFIX=$(echo "$VARIANT_ASSETS" | jq -r '.assetPrefix')
+  VA_SUFFIX=$(echo "$VARIANT_ASSETS" | jq -r '.assetSuffix // ".tar.xz"')
+  if [ ! -f "$VA_FILE" ] || ! grep -q 'std:variants-begin' "$VA_FILE" ||
+    ! grep -q 'std:variants-end' "$VA_FILE"; then
+    err "variantAssets: '$VA_FILE' needs both '# std:variants-begin' and '# std:variants-end' markers"
+    output "error_type" "config-error"
+    exit 1
+  fi
+  VA_ASSETS=$(echo "$RELEASES" | jq -c --arg t "$LATEST_TAG" 'map(select(.tag_name==$t))[0].assets // []')
+  VA_MATCH="${VA_PREFIX}${LATEST_TAG}-"
+  VA_BLOCK=""
+  VA_COUNT=0
+  while IFS=$'\t' read -r a_name a_url; do
+    [ -n "$a_name" ] || continue
+    case "$a_name" in
+    "$VA_MATCH"*"$VA_SUFFIX") ;;
+    *) continue ;;
+    esac
+    variant="${a_name#"$VA_MATCH"}"
+    variant="${variant%"$VA_SUFFIX"}"
+    case "$variant" in
+    "" | *[!A-Za-z0-9_]*) continue ;;
+    esac
+    log "variant '$variant': prefetch $a_url"
+    v_hash=$(nix store prefetch-file --unpack --hash-type sha256 --json "$a_url" 2>/dev/null | jq -r '.hash // empty' || true)
+    if [ -z "$v_hash" ]; then
+      err "variantAssets: prefetch failed for $a_url"
+      output "error_type" "hash-extraction"
+      exit 1
+    fi
+    VA_BLOCK="${VA_BLOCK}    ${variant} = \"${v_hash}\";"$'\n'
+    VA_COUNT=$((VA_COUNT + 1))
+  done < <(echo "$VA_ASSETS" | jq -r '.[] | [.name, .browser_download_url] | @tsv')
+  if [ "$VA_COUNT" -eq 0 ]; then
+    err "variantAssets: no asset matched '${VA_MATCH}*${VA_SUFFIX}' in release $LATEST_TAG"
+    output "error_type" "no-matching-tag"
+    exit 1
+  fi
+  VA_NEW="  variants = {"$'\n'"${VA_BLOCK}  };"
+  awk -v repl="$VA_NEW" '
+    /std:variants-begin/ { print; print repl; skip = 1; next }
+    /std:variants-end/ { skip = 0; print; next }
+    !skip { print }
+  ' "$VA_FILE" >"$VA_FILE.tmp" && mv "$VA_FILE.tmp" "$VA_FILE"
+  log "variantAssets: regenerated $VA_COUNT variant(s) in $VA_FILE"
+  output "variants" "$VA_COUNT"
+fi
+
 # --- Extract hashes (iterative build-fail-parse) ------------------------
 # update.json `hashes` entries are either a bare field name (auto-located in
 # the first *.nix file declaring it) or {"field","file"} to disambiguate when

@@ -1,10 +1,12 @@
 {
   version = "cachyos-11.0-20260702-slr";
+  # std:variants-begin
   variants = {
     x86_64 = "sha256-ZyyhEf6NcW7MzswWAlMdE4Ok8KnBOmB81yvu8ZwVxl4=";
     x86_64_v3 = "sha256-pbx/WDgpa55WDr1exD4rrNWsRoVkqHIUjzX1PJObxG8=";
     arm64 = "sha256-NgoWTok8N41B4vh4bj0VOiAQzJiTFrkbpr4DnoTFRoY=";
   };
+  # std:variants-end
   pins = {
     "cachyos-10.0-sunset-slr" = {
       variants = {
