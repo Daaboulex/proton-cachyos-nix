@@ -79,6 +79,27 @@ if [ "$UPSTREAM_TYPE" = "custom" ]; then
   exit 0
 fi
 
+# --- Hash-config validation ---------------------------------------------
+# A source FOD reports no field identity, so the router below can only map a
+# mismatch to the one declared non-vendor field; a second is unattributable.
+VARIANT_ASSETS=$(echo "$CONFIG" | jq -c '.variantAssets // empty')
+DECLARED_HASHES=$(echo "$CONFIG" | jq '.hashes // [] | length')
+DECLARED_SOURCE_HASHES=$(echo "$CONFIG" | jq '
+  [.hashes // [] | .[] | if type == "string" then . else .field end
+   | select(. != "vendorHash" and . != "npmDepsHash" and . != "cargoHash")] | length')
+if [ -n "$VARIANT_ASSETS" ] && [ "$DECLARED_HASHES" -gt 0 ]; then
+  err "variantAssets and hashes are mutually exclusive: variantAssets resolves every variant from its asset URL, so hashes[] must be empty"
+  output "updated" "false"
+  output "error_type" "config-error"
+  exit 1
+fi
+if [ "$DECLARED_SOURCE_HASHES" -gt 1 ]; then
+  err "hashes[] declares $DECLARED_SOURCE_HASHES source hashes: every source mismatch routes to the first field, leaving the rest dummied, so the loop can never converge — use variantAssets for a multi-variant release"
+  output "updated" "false"
+  output "error_type" "config-error"
+  exit 1
+fi
+
 # --- Get current version -------------------------------------------------
 # trackOnly repos record the upstream marker (a commit) in trackFile, not a
 # version literal — read it from there. Otherwise handle both `version = "x"`
@@ -405,7 +426,8 @@ fi
 # sourceFile. A newly published variant (a future -x86_64_v4) is picked up with
 # no config change; a dropped one disappears. Pins sit outside the markers and
 # are never rewritten. Mutually exclusive with `hashes` (which stays empty).
-VARIANT_ASSETS=$(echo "$CONFIG" | jq -c '.variantAssets // empty')
+# defaultVariant names the variant whose asset carries no `-<variant>` token
+# (GE-Proton ships `<tag>.tar.gz` for x86_64 and `<tag>-aarch64.tar.gz`).
 if [ -n "$VARIANT_ASSETS" ]; then
   if [ "$UPSTREAM_TYPE" != "github-release" ]; then
     err "variantAssets requires upstream.type 'github-release'"
@@ -415,6 +437,7 @@ if [ -n "$VARIANT_ASSETS" ]; then
   VA_FILE=$(echo "$VARIANT_ASSETS" | jq -r '.sourceFile // "sources.nix"')
   VA_PREFIX=$(echo "$VARIANT_ASSETS" | jq -r '.assetPrefix')
   VA_SUFFIX=$(echo "$VARIANT_ASSETS" | jq -r '.assetSuffix // ".tar.xz"')
+  VA_DEFAULT=$(echo "$VARIANT_ASSETS" | jq -r '.defaultVariant // empty')
   if [ ! -f "$VA_FILE" ] || ! grep -q 'std:variants-begin' "$VA_FILE" ||
     ! grep -q 'std:variants-end' "$VA_FILE"; then
     err "variantAssets: '$VA_FILE' needs both '# std:variants-begin' and '# std:variants-end' markers"
@@ -427,15 +450,19 @@ if [ -n "$VARIANT_ASSETS" ]; then
   VA_COUNT=0
   while IFS=$'\t' read -r a_name a_url; do
     [ -n "$a_name" ] || continue
-    case "$a_name" in
-    "$VA_MATCH"*"$VA_SUFFIX") ;;
-    *) continue ;;
-    esac
-    variant="${a_name#"$VA_MATCH"}"
-    variant="${variant%"$VA_SUFFIX"}"
-    case "$variant" in
-    "" | *[!A-Za-z0-9_]*) continue ;;
-    esac
+    if [ -n "$VA_DEFAULT" ] && [ "$a_name" = "${VA_PREFIX}${LATEST_TAG}${VA_SUFFIX}" ]; then
+      variant="$VA_DEFAULT"
+    else
+      case "$a_name" in
+      "$VA_MATCH"*"$VA_SUFFIX") ;;
+      *) continue ;;
+      esac
+      variant="${a_name#"$VA_MATCH"}"
+      variant="${variant%"$VA_SUFFIX"}"
+      case "$variant" in
+      "" | *[!A-Za-z0-9_]*) continue ;;
+      esac
+    fi
     log "variant '$variant': prefetch $a_url"
     v_hash=$(nix store prefetch-file --unpack --hash-type sha256 --json "$a_url" 2>/dev/null | jq -r '.hash // empty' || true)
     if [ -z "$v_hash" ]; then
@@ -447,7 +474,9 @@ if [ -n "$VARIANT_ASSETS" ]; then
     VA_COUNT=$((VA_COUNT + 1))
   done < <(echo "$VA_ASSETS" | jq -r '.[] | [.name, .browser_download_url] | @tsv')
   if [ "$VA_COUNT" -eq 0 ]; then
-    err "variantAssets: no asset matched '${VA_MATCH}*${VA_SUFFIX}' in release $LATEST_TAG"
+    VA_WANTED="'${VA_MATCH}*${VA_SUFFIX}'"
+    [ -n "$VA_DEFAULT" ] && VA_WANTED="$VA_WANTED or '${VA_PREFIX}${LATEST_TAG}${VA_SUFFIX}'"
+    err "variantAssets: no asset matched $VA_WANTED in release $LATEST_TAG"
     output "error_type" "no-matching-tag"
     exit 1
   fi
