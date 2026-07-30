@@ -57,6 +57,10 @@ REV_FILE=$(echo "$CONFIG" | jq -r --arg d "$VERSION_FILE" '.revFile // $d')
 # several namespaces (desktop "2026.2" vs "android/2026.5") pin to the ones it
 # packages — GitHub's "latest" flag can otherwise select a foreign namespace.
 TAG_FILTER=$(echo "$CONFIG" | jq -r '.upstream.tagFilter // ".*"')
+# How many 100-item pages of the tag/release list to search for a tagFilter
+# match before giving up. Bounds fetch_paged_match so a filter that can never
+# match still terminates instead of walking an unbounded history.
+TAG_PAGE_LIMIT=10
 # trackOnly: for hand-mirrored repos with no buildable artifact (the package is
 # a reimplementation, not a fetched source). The updater only DETECTS upstream
 # movement and files a "remirror-needed" reminder; it never writes, builds, or
@@ -155,6 +159,33 @@ fetch_latest() {
   return 1
 }
 
+# fetch_paged_match <api-url-with-per_page> <jq-selector> — page through a
+# GitHub list endpoint until <jq-selector> (given $f = tagFilter) yields a
+# value. A repo publishing several tag namespaces can push the tracked one far
+# past the first page (CachyOS/wine-cachyos carries ~370 rolling experimental-*
+# tags ahead of the newest *-wine build tag), and a single-page fetch would
+# report "no match" forever, failing every scheduled run. Stops at the first
+# match, at a short page (end of the list), or at TAG_PAGE_LIMIT.
+# Sets PAGED_MATCH (the match) and PAGED_BODY (the page it came from, so a
+# caller can read the matched entry's other fields — variantAssets needs the
+# release's asset list); returns 1 when nothing matched, 2 on a fetch error.
+# Deliberately not echo-and-capture: a command substitution runs in a subshell,
+# which would drop PAGED_BODY.
+fetch_paged_match() {
+  local url="$1" selector="$2" page=1 body
+  PAGED_MATCH=""
+  PAGED_BODY=""
+  while [ "$page" -le "$TAG_PAGE_LIMIT" ]; do
+    body=$(fetch_latest "curl -sfL '$url&page=$page'") || return 2
+    PAGED_BODY="$body"
+    PAGED_MATCH=$(echo "$body" | jq -r --arg f "$TAG_FILTER" "$selector")
+    [ -n "$PAGED_MATCH" ] && return 0
+    [ "$(echo "$body" | jq -r 'length')" -lt 100 ] && return 1
+    page=$((page + 1))
+  done
+  return 1
+}
+
 FULL_REV=""
 case "$UPSTREAM_TYPE" in
 github-release)
@@ -164,15 +195,20 @@ github-release)
   # non-draft, non-prerelease tag whose name matches tagFilter. Filtering the
   # list — not trusting /releases/latest — is what lets a repo ignore a foreign
   # release namespace; GitHub's "latest" flag can point at any of them.
-  RELEASES=$(fetch_latest "curl -sfL 'https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100'") || {
+  RC=0
+  # shellcheck disable=SC2016  # $f is a jq variable (--arg f), not a shell one
+  fetch_paged_match \
+    "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100" \
+    'map(select((.draft | not) and (.prerelease | not)) | .tag_name | select(test($f)))[0] // empty' || RC=$?
+  if [ "$RC" -eq 2 ]; then
     warn "Failed to fetch releases from $OWNER/$REPO"
     output "updated" "false"
     exit 2
-  }
-  LATEST_TAG=$(echo "$RELEASES" | jq -r --arg f "$TAG_FILTER" \
-    'map(select((.draft | not) and (.prerelease | not)) | .tag_name | select(test($f)))[0] // empty')
+  fi
+  LATEST_TAG="$PAGED_MATCH"
+  RELEASES="$PAGED_BODY"
   if [ -z "$LATEST_TAG" ]; then
-    err "No release tag matched tagFilter '$TAG_FILTER' for $OWNER/$REPO"
+    err "No release tag matched tagFilter '$TAG_FILTER' for $OWNER/$REPO (searched up to $TAG_PAGE_LIMIT pages)"
     output "updated" "false"
     output "error_type" "no-matching-tag"
     exit 1
@@ -184,15 +220,19 @@ github-release)
 github-tag)
   OWNER=$(echo "$CONFIG" | jq -r '.upstream.owner')
   REPO=$(echo "$CONFIG" | jq -r '.upstream.repo')
-  TAGS=$(fetch_latest "curl -sfL 'https://api.github.com/repos/$OWNER/$REPO/tags?per_page=100'") || {
+  RC=0
+  # shellcheck disable=SC2016  # $f is a jq variable (--arg f), not a shell one
+  fetch_paged_match \
+    "https://api.github.com/repos/$OWNER/$REPO/tags?per_page=100" \
+    'map(.name | select(test($f)))[0] // empty' || RC=$?
+  if [ "$RC" -eq 2 ]; then
     warn "Failed to fetch tags from $OWNER/$REPO"
     output "updated" "false"
     exit 2
-  }
-  LATEST_TAG=$(echo "$TAGS" | jq -r --arg f "$TAG_FILTER" \
-    'map(.name | select(test($f)))[0] // empty')
+  fi
+  LATEST_TAG="$PAGED_MATCH"
   if [ -z "$LATEST_TAG" ]; then
-    err "No tag matched tagFilter '$TAG_FILTER' for $OWNER/$REPO"
+    err "No tag matched tagFilter '$TAG_FILTER' for $OWNER/$REPO (searched up to $TAG_PAGE_LIMIT pages)"
     output "updated" "false"
     output "error_type" "no-matching-tag"
     exit 1
