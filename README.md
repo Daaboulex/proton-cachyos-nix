@@ -95,7 +95,4 @@ Steam then lists `Proton-CachyOS-latest` (plus each pinned major, e.g. `Proton-C
 The packaging is MIT. Proton-CachyOS itself is upstream's license (Valve Proton BSD-3-Clause lineage plus bundled components); this flake redistributes nothing - the tarball is fetched from upstream's GitHub releases at build time.
 
 <!-- BEGIN generated:footer -->
----
-
-*Maintained as part of the [Daaboulex](https://github.com/Daaboulex) NixOS ecosystem.*
 <!-- END generated:footer -->
