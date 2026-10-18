@@ -1,10 +1,10 @@
 {
-  version = "cachyos-11.0-20261005-slr";
+  version = "cachyos-11.0-20261014-slr";
   # std:variants-begin
   variants = {
-    arm64 = "sha256-yGphSPwNp0IA+V+HFL1vQP9P6qamHocnWooD8670vjE=";
-    x86_64 = "sha256-qcNHgFPIG6c3q53dyeZ18fZu+cBXzs5npyxgj/WIhkg=";
-    x86_64_v3 = "sha256-LlAnK4fAyLrWF+Z0L9Ft4kwfoSB+g+0o9XNvKlOSZXg=";
+    arm64 = "sha256-KMCfVYTs1P+6JZ+T1qzZuj/jUja2rVdnFmOYQhV942w=";
+    x86_64 = "sha256-L0CzBfelMJP2jj4VNEQY/ZswJo16TN6nNf9qKVryCRU=";
+    x86_64_v3 = "sha256-fHi/LfyvPj2qm8ma6JH+wEJiJO1Htwp6zkbdRSg6Xic=";
   };
   # std:variants-end
   pins = {
