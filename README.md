@@ -41,7 +41,7 @@ A new upstream variant (a future `x86_64_v4`, say) is discovered automatically: 
 
 ## Channels
 
-Every channel is a passthru of the tool attribute (`pkgs.proton-cachyos.v10`, `pkgs.proton-cachyos-v3.v9`), never a top-level package. `latest` follows upstream's newest release; each `v<major>` is the last release of a closed line. When upstream opens a new major, the daily updater pins the outgoing release by itself (`majorPattern` in `.github/update.json`), so no channel vanishes and nobody edits a hash by hand.
+Every channel is a passthru of the tool attribute (`pkgs.proton-cachyos.v10`, `pkgs.proton-cachyos-v3.v9`), never a top-level package. `latest` follows upstream's newest release; each `v<major>` is a line: the rolling line's channel follows its newest release and shows as a pin, a closed line's channel is its last release. When upstream opens a new major, the daily updater pins the outgoing release by itself (`majorPattern` in `.github/update.json`), so no channel vanishes and nobody edits a hash by hand.
 
 Each channel's `compatibilitytool.vdf` carries two names. The key, what Steam saves for a game's choice, is the attribute and the channel and never moves, so a choice survives every update and is the same for the arm64 build and the x86_64 payload on one Steam root. The display name, what the dropdown shows, is `Proton-CachyOS <major> (<build>, latest)` for the rolling channel and `Proton-CachyOS <major> (<build>)` for a pin, with `v3` first in the brackets for that variant; a dated build reads as a date, `sunset` stays a word.
 
@@ -50,6 +50,7 @@ Pins as of 2026-11-08; the live truth is `sources.nix` (updated daily).
 | Channel | Key Steam saves | Dropdown | Release | Assets |
 |---|---|---|---|---|
 | `latest` | `proton-cachyos-latest`, `proton-cachyos-v3-latest` | `Proton-CachyOS 11.0 (2026-10-15, latest)`, `Proton-CachyOS 11.0 (v3, 2026-10-15, latest)` | cachyos-11.0-20261015-slr | x86_64, x86_64_v3, arm64 |
+| `v11` | `proton-cachyos-v11`, `proton-cachyos-v3-v11` | `Proton-CachyOS 11.0 (2026-10-15)`, `Proton-CachyOS 11.0 (v3, 2026-10-15)` | cachyos-11.0-20261015-slr, the rolling line | x86_64, x86_64_v3, arm64 |
 | `v10` | `proton-cachyos-v10`, `proton-cachyos-v3-v10` | `Proton-CachyOS 10.0 (sunset)`, `Proton-CachyOS 10.0 (v3, sunset)` | cachyos-10.0-sunset-slr | x86_64, x86_64_v3, arm64 |
 | `v9` | `proton-cachyos-v9`, `proton-cachyos-v3-v9` | `Proton-CachyOS 9.0 (2025-04-26)`, `Proton-CachyOS 9.0 (v3, 2025-04-26)` | cachyos-9.0-20250426-slr | x86_64, x86_64_v3 |
 
