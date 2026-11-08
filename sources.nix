@@ -1,4 +1,5 @@
 {
+  # std:rolling-begin
   version = "cachyos-11.0-20261015-slr";
   # std:variants-begin
   variants = {
@@ -7,12 +8,22 @@
     x86_64_v3 = "sha256-USZ7wVV069xmGJdtyg6b/pdv7qqLkUkSZEyHiiVIs1o=";
   };
   # std:variants-end
+  # std:rolling-end
   pins = {
+    # std:pins-begin
     "cachyos-10.0-sunset-slr" = {
       variants = {
+        arm64 = "sha256-YXOI1QqP1ZSmvy8fUNgkGrGT32kyJywkhlPZsQVQXYs=";
         x86_64 = "sha256-6sSp55dEzPrLTUp3drsqYvp5+635aBT3JRFC2BYCCC4=";
         x86_64_v3 = "sha256-Q8AsXnjukewCd3th3wSzfWmjujJcCb//FvvQfeZ6/XM=";
       };
     };
+    "cachyos-9.0-20250426-slr" = {
+      variants = {
+        x86_64 = "sha256-v1PWtudXp56dnj8BcsyDS5qayrEJnk8ZJ/NPUVkg1n4=";
+        x86_64_v3 = "sha256-4TWdXpTNEZJGxyi01appu4454oDMfZM1nNa85litcHs=";
+      };
+    };
+    # std:pins-end
   };
 }
