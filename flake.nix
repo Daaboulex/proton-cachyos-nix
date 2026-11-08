@@ -17,6 +17,56 @@
 
   outputs =
     inputs@{ flake-parts, ... }:
+    let
+      toolsFor =
+        pkgs:
+        inputs.std.lib.steamCompatTool {
+          inherit pkgs;
+          attribute = "proton-cachyos";
+          brand = "Proton-CachyOS";
+          homepage = "https://github.com/CachyOS/proton-cachyos";
+          description = "Proton-CachyOS prebuilt Steam Play compatibility tool";
+          license = pkgs.lib.licenses.bsd3;
+          sources = import ./sources.nix;
+          inherit (pkgs.lib.importJSON ./.github/update.json) majorPattern;
+          buildOf =
+            tag:
+            let
+              build = pkgs.lib.head (builtins.match "cachyos-[0-9.]+-(.*)-slr" tag);
+            in
+            if builtins.match "[0-9]{8}" build != null then
+              "${pkgs.lib.substring 0 4 build}-${pkgs.lib.substring 4 2 build}-${pkgs.lib.substring 6 2 build}"
+            else
+              build;
+          assetUrl =
+            tag: token:
+            "https://github.com/CachyOS/proton-cachyos/releases/download/${tag}/proton-${tag}-${token}.tar.xz";
+          variantsOf = release: release.variants;
+          tokens = {
+            x86_64 = {
+              system = "x86_64-linux";
+              suffix = "";
+              qualifier = null;
+            };
+            x86_64_v3 = {
+              system = "x86_64-linux";
+              suffix = "-v3";
+              qualifier = "v3";
+            };
+            arm64 = {
+              system = "aarch64-linux";
+              suffix = "";
+              qualifier = null;
+            };
+          };
+        };
+      withAlias =
+        pkgs: tools:
+        tools
+        // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isAarch64 {
+          proton-cachyos-arm64 = pkgs.lib.warn "proton-cachyos-arm64 is proton-cachyos on aarch64-linux now; the alias goes with the next release" tools.proton-cachyos;
+        };
+    in
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
@@ -26,61 +76,17 @@
       imports = [ inputs.std.flakeModules.base ];
 
       perSystem =
-        {
-          pkgs,
-          self',
-          lib,
-          ...
-        }:
+        { pkgs, ... }:
         let
-          assembled = pkgs.callPackage ./default.nix { };
-          isArm = pkgs.stdenv.hostPlatform.isAarch64;
-          native = if isArm then assembled.channels.arm64 else assembled.channels.x86_64;
-          variantPkgs = lib.filterAttrs (
-            _: drv: lib.isDerivation drv && lib.elem pkgs.stdenv.hostPlatform.system drv.meta.platforms
-          ) assembled;
+          cachyos = toolsFor pkgs;
         in
         {
-          packages = variantPkgs // {
-            default = if isArm then assembled.proton-cachyos-arm64 else assembled.proton-cachyos;
+          packages = withAlias pkgs cachyos.tools // {
+            default = cachyos.tools.proton-cachyos;
           };
-
-          checks.compat-tool-shape =
-            let
-              named = lib.mapAttrsToList (n: drv: {
-                inherit n;
-                tool = drv.steamcompattool;
-                ver = drv.version;
-              }) native;
-            in
-            pkgs.runCommand "proton-cachyos-shape" { } ''
-              ${lib.concatMapStringsSep "\n" (c: ''
-                echo "checking channel ${c.n} (${c.ver})"
-                test -e "${c.tool}/proton"
-                test -f "${c.tool}/compatibilitytool.vdf"
-                grep -q '"Proton-CachyOS' "${c.tool}/compatibilitytool.vdf"
-                if grep -qF "${c.ver}" "${c.tool}/compatibilitytool.vdf"; then
-                  echo "versioned identity ${c.ver} leaked into channel ${c.n}'s vdf" >&2
-                  exit 1
-                fi
-              '') named}
-              touch "$out"
-            '';
+          checks.compat-tool-shape = cachyos.checks.compat-tool-shape;
         };
 
-      flake.overlays.default =
-        final: prev:
-        let
-          assembled = final.callPackage ./default.nix { };
-          nameOf =
-            v: "proton-cachyos" + (if v == "x86_64" then "" else "-" + prev.lib.removePrefix "x86_64_" v);
-          variants = builtins.attrNames (import ./sources.nix).variants;
-        in
-        builtins.listToAttrs (
-          map (v: {
-            name = nameOf v;
-            value = assembled.${nameOf v};
-          }) variants
-        );
+      flake.overlays.default = final: _prev: withAlias final (toolsFor final).tools;
     };
 }

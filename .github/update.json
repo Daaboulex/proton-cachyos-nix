@@ -6,7 +6,7 @@
     "repo": "proton-cachyos",
     "tagFilter": "^cachyos-"
   },
-  "packageFile": "package.nix",
+  "packageFile": "flake.nix",
   "versionFile": "sources.nix",
   "majorPattern": "cachyos-([0-9]+\\.[0-9]+)-.*",
   "variantAssets": {
