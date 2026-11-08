@@ -60,12 +60,6 @@
             };
           };
         };
-      withAlias =
-        pkgs: tools:
-        tools
-        // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isAarch64 {
-          proton-cachyos-arm64 = pkgs.lib.warn "proton-cachyos-arm64 is proton-cachyos on aarch64-linux now; the alias goes with the next release" tools.proton-cachyos;
-        };
     in
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
@@ -81,12 +75,21 @@
           cachyos = toolsFor pkgs;
         in
         {
-          packages = withAlias pkgs cachyos.tools // {
+          packages = cachyos.tools // {
             default = cachyos.tools.proton-cachyos;
           };
           checks.compat-tool-shape = cachyos.checks.compat-tool-shape;
+          checks.overlay-applies =
+            let
+              applied = pkgs.extend inputs.self.overlays.default;
+            in
+            pkgs.runCommand "overlay-applies" { } ''
+              test -n "${applied.proton-cachyos.version}"
+              test -n "${applied.proton-cachyos.v11.version}"
+              touch $out
+            '';
         };
 
-      flake.overlays.default = final: _prev: withAlias final (toolsFor final).tools;
+      flake.overlays.default = _final: prev: (toolsFor prev).tools;
     };
 }
