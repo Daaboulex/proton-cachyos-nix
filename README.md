@@ -28,33 +28,18 @@ Every variant upstream publishes is packaged:
 | Attribute | Upstream asset | System |
 |---|---|---|
 | `proton-cachyos` (`packages.default`, `pkgs.proton-cachyos`) | the host's own build: `x86_64` on `x86_64-linux`, `arm64` on `aarch64-linux` | both |
-| `proton-cachyos-v3` | `x86_64_v3` (Zen 4/5-class CPU optimized) | `x86_64-linux` |
+| `proton-cachyos-v3` | `x86_64_v3` (for CPUs that meet the x86-64-v3 level, which includes AVX2) | `x86_64-linux` |
 | `proton-cachyos-x86_64`, `proton-cachyos-x86_64-v3` | the x86_64 tarballs on a host of either architecture, for an x86 Steam client running under FEX on aarch64; on `x86_64-linux` the same derivations as `proton-cachyos` and `proton-cachyos-v3` | both |
-| `proton-cachyos-arm64` | `proton-cachyos` on `aarch64-linux`, kept one release for consumers written against the old name; it warns and goes with the next release | `aarch64-linux` |
 
-A new upstream variant (a future `x86_64_v4`, say) is discovered automatically: the daily updater enumerates the release's assets and regenerates the variant set from whatever CachyOS ships; it then needs one entry in `tokens` in `flake.nix` to say which system it runs on and which word the dropdown shows for it.
-
-- **Package integrity** - SRI source hash, verified on every build
-- **CI security** - pinned GitHub Actions (full SHA, not tags), minimal permissions, build-gated PRs
-- **Upstream trust** - daily automated release detection, hash recomputation, and a verified test build, auto-committed to `main`
-- **Stale cleanup** - weekly `flake.lock` refresh (pushed only if it still builds); orphaned update branches older than 30 days are deleted
+A new upstream variant (a future `x86_64_v4`, say) is discovered automatically: the daily updater enumerates the release's assets and regenerates the variant set from whatever CachyOS ships; it then needs one entry in `tokens` in [`flake.nix`](./flake.nix) to say which system it runs on and which word the dropdown shows for it.
 
 ## Channels
 
-Every channel is a passthru of the tool attribute (`pkgs.proton-cachyos.v10`, `pkgs.proton-cachyos-v3.v9`), never a top-level package. `latest` follows upstream's newest release; each `v<major>` is a line: the rolling line's channel follows its newest release and shows as a pin, a closed line's channel is its last release. When upstream opens a new major, the daily updater pins the outgoing release by itself (`majorPattern` in `.github/update.json`), so no channel vanishes and nobody edits a hash by hand.
+Every channel is a passthru of the tool attribute (`pkgs.proton-cachyos.v10`, `pkgs.proton-cachyos-v3.v9`), never a top-level package. `latest` follows upstream's newest release; each `v<major>` is a line: the rolling line's channel follows its newest release and shows as a pin, a closed line's channel is its last release. When upstream opens a new major, the daily updater pins the outgoing release by itself (`majorPattern` in [`.github/update.json`](./.github/update.json)), so no channel vanishes and nobody edits a hash by hand.
 
 Each channel's `compatibilitytool.vdf` carries two names. The key, what Steam saves for a game's choice, is the attribute and the channel and never moves, so a choice survives every update and is the same for the arm64 build and the x86_64 payload on one Steam root. The display name, what the dropdown shows, is `Proton-CachyOS <major> (<build>, latest)` for the rolling channel and `Proton-CachyOS <major> (<build>)` for a pin, with `v3` first in the brackets for that variant; a dated build reads as a date, `sunset` stays a word.
 
-Pins as of 2026-11-08; the live truth is `sources.nix` (updated daily).
-
-| Channel | Key Steam saves | Dropdown | Release | Assets |
-|---|---|---|---|---|
-| `latest` | `proton-cachyos-latest`, `proton-cachyos-v3-latest` | `Proton-CachyOS 11.0 (2026-10-15, latest)`, `Proton-CachyOS 11.0 (v3, 2026-10-15, latest)` | cachyos-11.0-20261015-slr | x86_64, x86_64_v3, arm64 |
-| `v11` | `proton-cachyos-v11`, `proton-cachyos-v3-v11` | `Proton-CachyOS 11.0 (2026-10-15)`, `Proton-CachyOS 11.0 (v3, 2026-10-15)` | cachyos-11.0-20261015-slr, the rolling line | x86_64, x86_64_v3, arm64 |
-| `v10` | `proton-cachyos-v10`, `proton-cachyos-v3-v10` | `Proton-CachyOS 10.0 (sunset)`, `Proton-CachyOS 10.0 (v3, sunset)` | cachyos-10.0-sunset-slr | x86_64, x86_64_v3, arm64 |
-| `v9` | `proton-cachyos-v9`, `proton-cachyos-v3-v9` | `Proton-CachyOS 9.0 (2025-04-26)`, `Proton-CachyOS 9.0 (v3, 2025-04-26)` | cachyos-9.0-20250426-slr | x86_64, x86_64_v3 |
-
-The keys replaced the versioned identities of earlier builds (`Proton-CachyOS-latest`, `Proton-CachyOS-latest arm64`, `Proton-CachyOS 10.0-sunset v3`): a game mapped to one of those shows no tool until it is picked again, once.
+The rolling release, the pinned releases and the assets of each are in [`sources.nix`](./sources.nix), which the daily updater moves.
 
 <!-- BEGIN generated:installation -->
 ## Installation
@@ -74,7 +59,7 @@ Then either take the package directly:
 
 ```nix
 programs.steam.extraCompatPackages = [
-  inputs.proton-cachyos.packages.${pkgs.system}.default
+  inputs.proton-cachyos.packages.${pkgs.stdenv.hostPlatform.system}.default
 ];
 ```
 
@@ -94,7 +79,7 @@ programs.steam = {
 };
 ```
 
-Steam then lists `Proton-CachyOS 11.0 (2026-10-15, latest)` and `Proton-CachyOS 10.0 (v3, sunset)` in each game's Compatibility dropdown. The `out` output is intentionally a stub - the tool is consumed through the `steamcompattool` output only, exactly like nixpkgs `proton-ge-bin`. `checks.compat-tool-shape` builds every channel of every variant and reads each vdf for the key and display formats.
+Steam then lists both in each game's Compatibility dropdown, under the display names the Channels section gives. The `out` output is intentionally a stub. The tool is consumed through the `steamcompattool` output only, exactly like nixpkgs `proton-ge-bin`. `checks.compat-tool-shape` builds every channel of every variant and reads each vdf for the key and display formats.
 
 ## License
 
